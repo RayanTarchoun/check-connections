@@ -72,6 +72,27 @@ async function checkProvider(provider) {
 console.log('\nPing des providers...\n');
 const results = await Promise.all(providers.map(p => checkProvider(p)));
 
-for (const r of results) {
-  console.log(r);
+// PHASE 4
+
+function displayResults(results) {
+  console.log('\nResultats :\n');
+
+  let okCount = 0;
+
+  for (const r of results) {
+    const icon = r.status === 'OK' ? '[OK]' : '[ERREUR]';
+    const error = r.error ? ` -- ${r.error}` : '';
+    console.log(`  ${icon} ${r.provider.padEnd(15)} ${r.latency}ms${error}`);
+    if (r.status === 'OK') okCount++;
+  }
+
+  console.log(`\n${okCount}/${results.length} connexions actives`);
+
+  if (okCount === results.length) {
+    console.log('Tout est bon. Vous etes prets pour la suite !');
+  } else {
+    console.log('Certaines connexions ont echoue. Verifiez vos cles.');
+  }
 }
+
+displayResults(results);
