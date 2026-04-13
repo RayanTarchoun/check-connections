@@ -2,7 +2,7 @@ import 'dotenv/config';
 
 //PHASE 1 : Verification des cles
 
-const requiredKeys = ['MISTRAL_API_KEY', 'GROQ_API_KEY', 'HUGGINGFACE_TOKEN'];
+const requiredKeys = ['MISTRAL_API_KEY', 'GROQ_API_KEY', 'HUGGINGFACE_TOKEN', 'PINECONE_API_KEY'];
 
 console.log('Verification des cles API...\n');
 
@@ -10,6 +10,10 @@ for (const key of requiredKeys) {
   const status = process.env[key] ? 'presente' : 'MANQUANTE';
   console.log(`${key}: ${status}`);
 }
+
+// PHASE 5 : Flag verbose
+
+const verbose = process.argv.includes('--verbose');
 
 // PHASE 3
 
@@ -50,48 +54,87 @@ async function checkProvider(provider) {
       },
       body: JSON.stringify({
         model: provider.model,
-        messages: [{ role: 'user', content: 'Dis juste ok' }],
+        messages: [{ role: 'user', content: verbose ? 'Donne-moi la capitale de la France en un mot.' : 'Dis juste ok' }],
         max_tokens: 5
       })
     });
 
+    const data = await response.json();
     const latency = Date.now() - start;
 
     if (!response.ok) {
       return { provider: provider.name, status: 'ERROR', latency, error: `HTTP ${response.status}` };
     }
 
-    return { provider: provider.name, status: 'OK', latency };
+    const answer = verbose ? data.choices[0].message.content : null;
+    return { provider: provider.name, status: 'OK', latency, answer };
   } catch (err) {
     const latency = Date.now() - start;
     return { provider: provider.name, status: 'ERROR', latency, error: err.message };
   }
 }
 
-// Lancement des 3 checks en parallele
+// PHASE 5
+
+async function checkPinecone() {
+  const key = process.env.PINECONE_API_KEY;
+
+  if (!key) {
+    return { provider: 'Pinecone', status: 'ERROR', latency: 0, error: 'Cle API manquante' };
+  }
+
+  const start = Date.now();
+
+  try {
+    const response = await fetch('https://api.pinecone.io/indexes', {
+      method: 'GET',
+      headers: {
+        'Api-Key': key,
+        'X-Pinecone-API-Version': '2024-07'
+      }
+    });
+
+    const latency = Date.now() - start;
+
+    if (!response.ok) {
+      return { provider: 'Pinecone', status: 'ERROR', latency, error: `HTTP ${response.status}` };
+    }
+
+    return { provider: 'Pinecone', status: 'OK', latency };
+  } catch (err) {
+    const latency = Date.now() - start;
+    return { provider: 'Pinecone', status: 'ERROR', latency, error: err.message };
+  }
+}
+
+// Lancement des checks en parallele
 console.log('\nPing des providers...\n');
-const results = await Promise.all(providers.map(p => checkProvider(p)));
+const results = await Promise.all([
+  ...providers.map(p => checkProvider(p)),
+  checkPinecone()
+]);
 
 // PHASE 4
 
 function displayResults(results) {
-  console.log('\nResultats :\n');
+  console.log('Resultats :\n');
 
   let okCount = 0;
 
   for (const r of results) {
     const icon = r.status === 'OK' ? '[OK]' : '[ERREUR]';
     const error = r.error ? ` -- ${r.error}` : '';
-    console.log(`  ${icon} ${r.provider.padEnd(15)} ${r.latency}ms${error}`);
+    const answer = r.answer ? ` -> "${r.answer}"` : '';
+    console.log(`  ${icon} ${r.provider.padEnd(15)} ${r.latency}ms${error}${answer}`);
     if (r.status === 'OK') okCount++;
   }
 
   console.log(`\n${okCount}/${results.length} connexions actives`);
 
   if (okCount === results.length) {
-    console.log('Tout est bon. Vous etes prets pour la suite !');
+    console.log('Tout est bon.');
   } else {
-    console.log('Certaines connexions ont echoue. Verifiez vos cles.');
+    console.log('Certaines connexions ont echoue.');
   }
 }
 
