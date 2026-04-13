@@ -1,37 +1,55 @@
-// check-connections.js
 import 'dotenv/config';
 
-// ===== PHASE 1 : Vérification que les clés sont présentes =====
+//PHASE 1 : Verification des cles
 
-const requiredKeys = ['MISTRAL_API_KEY', 'GROQ_API_KEY', 'HF_API_KEY'];
+const requiredKeys = ['MISTRAL_API_KEY', 'GROQ_API_KEY', 'HUGGINGFACE_TOKEN'];
 
-console.log('Vérification des clés API...\n');
+console.log('Verification des cles API...\n');
 
 for (const key of requiredKeys) {
-  const status = process.env[key] ? 'présente' : 'MANQUANTE';
+  const status = process.env[key] ? 'presente' : 'MANQUANTE';
   console.log(`${key}: ${status}`);
 }
 
-// ===== PHASE 2 : Ping Mistral =====
+// PHASE 3
 
-async function checkMistral() {
-  const key = process.env.MISTRAL_API_KEY;
+const providers = [
+  {
+    name: 'Mistral',
+    url: 'https://api.mistral.ai/v1/chat/completions',
+    key: process.env.MISTRAL_API_KEY,
+    model: 'mistral-small-latest'
+  },
+  {
+    name: 'Groq',
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    key: process.env.GROQ_API_KEY,
+    model: 'llama-3.3-70b-versatile'
+  },
+  {
+    name: 'Hugging Face',
+    url: 'https://router.huggingface.co/v1/chat/completions',
+    key: process.env.HUGGINGFACE_TOKEN,
+    model: 'meta-llama/Llama-3.1-8B-Instruct'
+  }
+];
 
-  if (!key) {
-    return { provider: 'Mistral', status: 'ERROR', latency: 0, error: 'Clé API manquante' };
+async function checkProvider(provider) {
+  if (!provider.key) {
+    return { provider: provider.name, status: 'ERROR', latency: 0, error: 'Cle API manquante' };
   }
 
   const start = Date.now();
 
   try {
-    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+    const response = await fetch(provider.url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${key}`
+        'Authorization': `Bearer ${provider.key}`
       },
       body: JSON.stringify({
-        model: 'mistral-small-latest',
+        model: provider.model,
         messages: [{ role: 'user', content: 'Dis juste ok' }],
         max_tokens: 5
       })
@@ -40,16 +58,20 @@ async function checkMistral() {
     const latency = Date.now() - start;
 
     if (!response.ok) {
-      return { provider: 'Mistral', status: 'ERROR', latency, error: `HTTP ${response.status}` };
+      return { provider: provider.name, status: 'ERROR', latency, error: `HTTP ${response.status}` };
     }
 
-    return { provider: 'Mistral', status: 'OK', latency };
+    return { provider: provider.name, status: 'OK', latency };
   } catch (err) {
     const latency = Date.now() - start;
-    return { provider: 'Mistral', status: 'ERROR', latency, error: err.message };
+    return { provider: provider.name, status: 'ERROR', latency, error: err.message };
   }
 }
 
-const result = await checkMistral();
-console.log('\n Ping Mistral...');
-console.log(result);
+// Lancement des 3 checks en parallele
+console.log('\nPing des providers...\n');
+const results = await Promise.all(providers.map(p => checkProvider(p)));
+
+for (const r of results) {
+  console.log(r);
+}
